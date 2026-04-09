@@ -1,0 +1,182 @@
+# Project Structure
+
+```
+Recommendation-system-from-amazon-datasets-main/
+├── web/                                    # Part 5: Demo Web (NEW)
+│   ├── backend/
+│   │   ├── main.py                        # FastAPI app
+│   │   ├── schemas.py                     # Pydantic models
+│   │   ├── config.py                      # Configuration
+│   │   ├── requirements.txt                # Dependencies
+│   │   ├── __init__.py
+│   │   └── .env                           # Environment variables (if created)
+│   │
+│   ├── frontend/
+│   │   ├── index.html                     # 🏠 Homepage
+│   │   ├── recommend.html                 # 👤 User Recommendations
+│   │   ├── similar.html                   # 🔗 Similar Products
+│   │   ├── coldstart.html                 # ⭐ Cold Start / New User
+│   │   ├── style.css                      # Global styles
+│   │   └── static/                        # (auto-mounted)
+│   │
+│   ├── run.py                             # Python script to run backend
+│   ├── run.bat                            # Batch script for Windows
+│   ├── run.sh                             # Bash script for Linux/Mac
+│   ├── .env.example                       # Environment variables template
+│   ├── README.md                          # Web documentation
+│   └── STRUCTURE.md                       # This file
+│
+├── content_based/                          # Part 3: Content-Based Engine
+│   ├── engine/
+│   │   ├── config.py
+│   │   ├── schemas.py
+│   │   ├── models.py
+│   │   ├── profiles.py
+│   │   ├── stores.py
+│   │   ├── utils.py
+│   │   ├── engine.py
+│   │   ├── __init__.py
+│   │   ├── embedding_matrix/              # (Generated)
+│   │   │   ├── embeddings.npy
+│   │   │   └── id2idx.pkl
+│   │   └── faiss/                         # (Generated)
+│   │       ├── products_hnsw.index
+│   │       └── products_ids.pkl
+│   │
+│   ├── demo.py
+│   ├── README.md
+│   └── __init__.py
+│
+├── Hybrid/                                  # Part 4: Output
+│   ├── final_recommendations.parquet/      # Hybrid recommendations
+│   └── popular_items.parquet/              # Popular items
+│
+├── notebook/                               # EDA & Analysis
+│   ├── data_exploration_1.ipynb
+│   ├── data_exploration_2.ipynb
+│   ├── data_exploration_3.ipynb
+│   ├── data_exploration_4.ipynb
+│   └── content_based_rs.ipynb
+│
+├── recommender/                            # Model notebooks
+│   ├── preprocessing.ipynb                 # Part 1
+│   ├── collaborative_filtering.ipynb       # Part 2
+│   ├── content_based_rs.ipynb             # Part 3
+│   └── Hybrid_System.ipynb                # Part 4
+│
+├── RS-20260405T032136Z-1-001/RS/          # Processed data (from Google Drive)
+│   ├── rating_rs.parquet
+│   ├── meta_rs.parquet
+│   └── feature_meta_Sbert/
+│       └── item_embedding.parquet
+│
+├── LICENSE
+├── README.md
+└── .gitignore
+```
+
+## Data Flow
+
+```
+Raw Data (Amazon Office Products)
+        │
+        ▼
+Part 1: Preprocessing
+    ├─ Load reviews + metadata
+    ├─ Clean & filter (≥5 ratings per user/item)
+    ├─ Generate SBERT embeddings
+    └─ Output: rating_rs.parquet, meta_rs.parquet, item_embedding.parquet
+        │
+        ├──────────────────────────────────┐
+        ▼                                  ▼
+Part 2: ALS (Collaborative Filtering)  Part 3: Content-Based
+    ├─ Train ALS model                     ├─ Load embeddings
+    ├─ Generate top-10 all users           ├─ Build FAISS index
+    ├─ Evaluate (RMSE, Precision, etc)     ├─ Similarity search
+    └─ Output: als_recommendations.parquet └─ Output: item_similarity
+        │                                  │
+        └──────────────┬───────────────────┘
+                       ▼
+            Part 4: Hybrid System
+            ├─ Combine ALS + Content-based
+            ├─ Cold start strategy
+            ├─ Popular items fallback
+            └─ Output: final_recommendations.parquet
+                       popular_items.parquet
+                       │
+                       ▼
+            Part 5: Demo Web (Backend + Frontend)
+            ├─ FastAPI server
+            │  ├─ /recommend/popular
+            │  ├─ /recommend/user/{user_id}
+            │  ├─ /recommend/item/{item_id}
+            │  └─ /recommend/new-user
+            │
+            └─ HTML/JS Frontend
+               ├─ Homepage (Popular)
+               ├─ User Recommendations
+               ├─ Similar Products
+               └─ Cold Start
+```
+
+## Key Files Role
+
+| File | Role | Generated By |
+|------|------|--------------|
+| `rating_rs.parquet` | User-item ratings | Part 1 (Preprocessing) |
+| `meta_rs.parquet` | Product metadata | Part 1 |
+| `item_embedding.parquet` | SBERT embeddings | Part 1 |
+| `als_model/` | ALS model checkpoint | Part 2 |
+| `final_recommendations.parquet` | Hybrid recommendations | Part 4 |
+| `popular_items.parquet` | Top items by rating count | Part 4 |
+| `embeddings.npy` | Content-based embeddings | Part 3 |
+| `products_hnsw.index` | FAISS vector DB | Part 3 |
+
+## Part 5 Architecture
+
+```
+FastAPI Backend (port 8000)
+├── API Routes
+│   ├── GET /health
+│   ├── GET /recommend/popular
+│   ├── GET /recommend/user/{user_id}
+│   ├── GET /recommend/item/{item_id}
+│   ├── POST /recommend/new-user
+│   ├── GET /metadata/{item_id}
+│   └── Static Files Mount (Frontend)
+│
+└── Data Loading & Processing
+    ├── Load Parquet Files
+    │   ├── final_recommendations.parquet
+    │   ├── popular_items.parquet
+    │   └── meta_rs.parquet (optional)
+    │
+    ├── Initialize Content-Based Engine
+    │   ├── EmbeddingStore (embeddings.npy + id2idx.pkl)
+    │   ├── FaissVectorStore (HNSW index)
+    │   └── AttentionProfile Model (optional)
+    │
+    └── Request Handlers
+        ├── Filter & Rank from Parquet
+        ├── FAISS similarity search
+        ├── Normalize scores
+        └── Return with metadata
+
+HTML/JS Frontend (localhost:8080 or via static mount)
+├── index.html          (GET / from backend)
+├── recommend.html      (Fetch GET /recommend/user)
+├── similar.html        (Fetch GET /recommend/item)
+├── coldstart.html      (Fetch POST /recommend/new-user)
+└── style.css           (Bootstrap + Custom)
+```
+
+## Summary
+
+Part 5 creates a complete web demo integrating:
+- ✅ Backend API (FastAPI) serving recommendations
+- ✅ Frontend UI (HTML/JS) for user interaction
+- ✅ 4 main pages covering all use cases
+- ✅ Responsive design and error handling
+- ✅ Easy-to-run scripts (run.py, run.bat, run.sh)
+
+Total: ~2000 lines of code (Python + HTML/JS/CSS)

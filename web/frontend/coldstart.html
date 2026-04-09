@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Người dùng mới - Recommendation System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        .popular-card {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+            user-select: none;
+        }
+        .popular-card:hover {
+            border-color: #0d6efd;
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(13,110,253,0.2);
+        }
+        .popular-card.selected {
+            border-color: #0d6efd;
+            background-color: #e7f1ff;
+        }
+        .popular-card.selected .select-indicator {
+            display: flex !important;
+        }
+        .select-indicator {
+            display: none !important;
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            background: #0d6efd;
+            border-radius: 50%;
+            color: white;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .rating-stars button {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            opacity: 0.4;
+            transition: opacity 0.1s;
+        }
+        .rating-stars button.active {
+            opacity: 1;
+        }
+        #selectedCount {
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        .sticky-bottom-bar {
+            position: sticky;
+            bottom: 0;
+            background: white;
+            border-top: 1px solid #dee2e6;
+            padding: 12px 0;
+            z-index: 100;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">📊 Recommendation System</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="/">🏠 Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/recommend.html">👤 Gợi ý cho người dùng</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/similar.html">🔗 Sản phẩm tương tự</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/coldstart.html">⭐ Người dùng mới</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-5">
+        <div class="text-center mb-4">
+            <h1 class="display-4">⭐ Gợi Ý Cho Người Dùng Mới</h1>
+            <p class="lead text-muted"></p>
+        </div>
+
+        <!-- Step 1: Select popular items -->
+        <div id="step1">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">🔥 Sản phẩm phổ biến — Click để chọn những sản phẩm bạn thích</h5>
+                <span class="badge bg-primary fs-6">Đã chọn: <span id="selectedCount">0</span></span>
+            </div>
+
+            <!-- Loading popular items -->
+            <div id="loadingPopular" class="text-center py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted">Đang tải sản phẩm phổ biến...</p>
+            </div>
+
+            <!-- Popular items grid -->
+            <div id="popularGrid" class="row g-3"></div>
+
+            <!-- Rating selector -->
+            <div id="ratingSection" class="mt-4 p-3 bg-light rounded" style="display:none;">
+                <label class="fw-bold mb-2">Mức độ yêu thích (áp dụng cho tất cả sản phẩm đã chọn):</label>
+                <div class="rating-stars d-flex gap-1" id="ratingStars">
+                    <button onclick="setRating(1)" data-val="1">⭐</button>
+                    <button onclick="setRating(2)" data-val="2">⭐</button>
+                    <button onclick="setRating(3)" data-val="3">⭐</button>
+                    <button onclick="setRating(4)" data-val="4">⭐</button>
+                    <button onclick="setRating(5)" data-val="5">⭐</button>
+                </div>
+                <small class="text-muted">Đang chọn: <span id="ratingLabel">5 sao</span></small>
+            </div>
+        </div>
+
+        <!-- Sticky bottom bar -->
+        <div class="sticky-bottom-bar">
+            <div class="container d-flex justify-content-between align-items-center">
+                <span class="text-muted">Chọn ít nhất 1 sản phẩm để nhận gợi ý</span>
+                <button class="btn btn-primary btn-lg px-5" onclick="getRecommendations()" id="btnRecommend" disabled>
+                    🚀 Nhận gợi ý
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading spinner for recommendations -->
+        <div id="loading" class="text-center py-5" style="display: none;">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Đang tính toán gợi ý...</p>
+        </div>
+
+        <!-- Recommendations section -->
+        <div id="recommendationsSection" style="display: none;" class="mt-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="mb-0">📌 Gợi Ý cho Bạn</h3>
+                <button class="btn btn-outline-secondary btn-sm" onclick="resetForm()">🔄 Chọn lại</button>
+            </div>
+            <div id="recommendationsContainer" class="row g-4"></div>
+        </div>
+
+        <!-- Error message -->
+        <div id="errorAlert" class="alert alert-danger mt-3" style="display: none;"></div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container text-center">
+            <p class="mb-0">Hệ Thống Gợi Ý - Amazon Office Products</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_URL = window.location.origin;
+        let selectedItems = new Set();
+        let currentRating = 5;
+        let popularItems = [];
+
+        // ---- Rating ----
+        function setRating(val) {
+            currentRating = val;
+            document.getElementById('ratingLabel').textContent = val + ' sao';
+            document.querySelectorAll('.rating-stars button').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.val) <= val);
+            });
+        }
+
+        // ---- Load popular items ----
+        async function loadPopularItems() {
+            try {
+                const res = await fetch(`${API_URL}/recommend/popular?top_k=20`);
+                if (!res.ok) throw new Error('Không tải được sản phẩm phổ biến');
+                const data = await res.json();
+                popularItems = data.items;
+                renderPopularItems(popularItems);
+            } catch (e) {
+                document.getElementById('loadingPopular').innerHTML =
+                    `<div class="alert alert-danger">❌ ${e.message}</div>`;
+            }
+        }
+
+        function renderPopularItems(items) {
+            document.getElementById('loadingPopular').style.display = 'none';
+            const grid = document.getElementById('popularGrid');
+            grid.innerHTML = '';
+            items.forEach(item => {
+                const title = item.metadata?.title || `Product ${item.item_id}`;
+                const col = document.createElement('div');
+                col.className = 'col-md-4 col-lg-3';
+                col.innerHTML = `
+                    <div class="card popular-card h-100 position-relative"
+                         id="card-${item.item_id}"
+                         onclick="toggleSelect('${item.item_id}', this)">
+                        <span class="select-indicator">✓</span>
+                        <div class="card-body p-3">
+                            <div class="rank-badge mb-2">🏆 #${item.rank}</div>
+                            <h6 class="card-title">${title}</h6>
+                            <p class="card-text mb-1"><small class="text-muted"><strong>ID:</strong> ${item.item_id}</small></p>
+                            <div class="score-badge">Score: ${item.score.toFixed(0)}</div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(col);
+            });
+        }
+
+        // ---- Toggle select ----
+        function toggleSelect(itemId, cardEl) {
+            if (selectedItems.has(itemId)) {
+                selectedItems.delete(itemId);
+                cardEl.classList.remove('selected');
+            } else {
+                selectedItems.add(itemId);
+                cardEl.classList.add('selected');
+            }
+            const count = selectedItems.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('btnRecommend').disabled = count === 0;
+            document.getElementById('ratingSection').style.display = count > 0 ? 'block' : 'none';
+        }
+
+        // ---- Get recommendations ----
+        async function getRecommendations() {
+            if (selectedItems.size === 0) return;
+
+            const interactions = Array.from(selectedItems).map(id => ({
+                item_id: id,
+                rating: currentRating
+            }));
+
+            const loading = document.getElementById('loading');
+            const container = document.getElementById('recommendationsContainer');
+            const errorAlert = document.getElementById('errorAlert');
+            const section = document.getElementById('recommendationsSection');
+
+            loading.style.display = 'block';
+            errorAlert.style.display = 'none';
+            container.innerHTML = '';
+            section.style.display = 'none';
+            document.getElementById('step1').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_URL}/recommend/new-user?top_k=15`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(interactions)
+                });
+
+                if (!response.ok) throw new Error('API error: ' + response.status);
+                const data = await response.json();
+
+                if (data.items.length === 0) {
+                    container.innerHTML = '<div class="col-12"><div class="alert alert-warning">Không thể tính gợi ý. Vui lòng thử lại.</div></div>';
+                } else {
+                    data.items.forEach(item => {
+                        container.appendChild(createRecommendationCard(item));
+                    });
+                }
+                section.style.display = 'block';
+            } catch (error) {
+                document.getElementById('step1').style.display = 'block';
+                errorAlert.textContent = '❌ Lỗi: ' + error.message;
+                errorAlert.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        // ---- Reset ----
+        function resetForm() {
+            selectedItems.clear();
+            currentRating = 5;
+            document.getElementById('selectedCount').textContent = '0';
+            document.getElementById('btnRecommend').disabled = true;
+            document.getElementById('ratingSection').style.display = 'none';
+            document.getElementById('recommendationsSection').style.display = 'none';
+            document.getElementById('step1').style.display = 'block';
+            document.querySelectorAll('.popular-card').forEach(c => c.classList.remove('selected'));
+            setRating(5);
+        }
+
+        function createRecommendationCard(item) {
+            const div = document.createElement('div');
+            div.className = 'col-md-6 col-lg-4';
+            const title = item.metadata?.title || `Product ${item.item_id}`;
+            const desc = item.metadata?.description
+                ? item.metadata.description.substring(0, 100) + '...'
+                : '';
+            div.innerHTML = `
+                <div class="card h-100 shadow-sm product-card">
+                    <div class="card-body">
+                        <div class="rank-badge">🎯 #${item.rank}</div>
+                        <h5 class="card-title">${title}</h5>
+                        ${desc ? `<p class="card-text small text-muted">${desc}</p>` : ``}
+                        <div class="score-badge">Score: ${item.score.toFixed(4)}</div>
+                        <p class="card-text mt-2"><small><strong>ID:</strong> ${item.item_id}</small></p>
+                    </div>
+                    <div class="card-footer bg-white">
+                        <a href="/similar.html?item_id=${item.item_id}" class="btn btn-sm btn-outline-primary w-100">
+                            Sản phẩm tương tự
+                        </a>
+                    </div>
+                </div>
+            `;
+            return div;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPopularItems();
+            setRating(5);
+        });
+    </script>
+</body>
+</html>
