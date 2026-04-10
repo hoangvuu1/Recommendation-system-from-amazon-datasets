@@ -16,7 +16,7 @@
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link active" href="/">📱 Trang chủ</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/">🏠 Trang chủ</a></li>
                     <li class="nav-item"><a class="nav-link" href="/recommend.html">👤 Gợi ý cho người dùng</a></li>
                     <li class="nav-item"><a class="nav-link" href="/similar.html">🔗 Sản phẩm tương tự</a></li>
                     <li class="nav-item"><a class="nav-link" href="/coldstart.html">⭐ Người dùng mới</a></li>
@@ -30,29 +30,23 @@
             <h1 class="display-4">🔥Sản phẩm phổ biến🔥</h1>
         </div>
 
-        <div class="row mb-5">
-            <div class="col-md-3 col-sm-6 mb-3">
+        <div class="row mb-5 justify-content-center">
+            <div class="col-md-2 col-sm-4 mb-3">
                 <div class="stat-card">
                     <div class="stat-number">12.8M</div>
                     <div class="stat-label">Reviews</div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
+            <div class="col-md-2 col-sm-4 mb-3">
                 <div class="stat-card">
                     <div class="stat-number">710K</div>
                     <div class="stat-label">Products</div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
+            <div class="col-md-2 col-sm-4 mb-3">
                 <div class="stat-card">
                     <div class="stat-number">7.6M</div>
                     <div class="stat-label">Users</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="stat-card">
-                    <div class="stat-number">4.21</div>
-                    <div class="stat-label">Avg Rating</div>
                 </div>
             </div>
         </div>
@@ -68,7 +62,7 @@
 
     <footer class="bg-dark text-light py-4 mt-5">
         <div class="container text-center">
-            <p class="mb-0">Recommendation System - Amazon Office Products</p>
+            <p class="mb-0">Hệ Thống Gợi Ý - Amazon Office Products</p>
             <small class="text-muted">FastAPI Backend + Vanilla JS Frontend</small>
         </div>
     </footer>
@@ -103,13 +97,20 @@
                         card.className = 'col-md-6 col-lg-4';
                         
                         var title = (item.metadata && item.metadata.title) ? item.metadata.title : ('Product ' + item.item_id);
+                        var imageUrl = (item.metadata && item.metadata.image_url) ? item.metadata.image_url : '';
                         
-                        card.innerHTML = 
-                            '<div class="card h-100 shadow-sm product-card">' +
+                        var cardHtml = '<div class="card h-100 shadow-sm product-card">';
+                        
+                        // Add image if available
+                        if (imageUrl) {
+                            cardHtml += '<img src="' + imageUrl + '" class="card-img-top" alt="' + title + '" style="height: 250px; object-fit: cover;">';
+                        }
+                        
+                        cardHtml += 
                             '<div class="card-body">' +
                             '<div class="rank-badge">🏆 #' + item.rank + '</div>' +
                             '<h5 class="card-title">' + title + '</h5>' +
-                            '<div class="score-badge">Score: ' + Math.round(item.score) + '</div>' +
+                            '<div class="score-badge">Lượt đánh giá: ' + Math.round(item.score) + '</div>' +
                             '<p class="card-text mt-2"><small><strong>ID:</strong> ' + item.item_id + '</small></p>' +
                             '</div>' +
                             '<div class="card-footer bg-white">' +
@@ -117,6 +118,7 @@
                             '</div>' +
                             '</div>';
                         
+                        card.innerHTML = cardHtml;
                         container.appendChild(card);
                     });
                 })

@@ -6,6 +6,7 @@ class ItemMetadata(BaseModel):
     product_id: str
     title: Optional[str] = None
     description: Optional[str] = None
+    image_url: Optional[str] = None
     features: Optional[list] = None
 
 

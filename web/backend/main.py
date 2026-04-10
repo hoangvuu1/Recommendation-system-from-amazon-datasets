@@ -30,6 +30,7 @@ from schemas import (
     RecommendationItem,
     ItemMetadata,
 )
+from product_mapper import get_product_mapper
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -119,36 +120,74 @@ def load_data():
     Loads hybrid recommendations and metadata immediately.
     Content-based engine is loaded on-demand to avoid startup delay.
     """
-    global final_recommendations_df, popular_items_df, meta_df
+    global final_recommendations_df, popular_items_df, meta_df, product_mapper
     
     try:
         # Load parquet files (fast - < 2 seconds)
         final_recommendations_df = pd.read_parquet(DATA_DIR / "final_recommendations.parquet")
         popular_items_df = pd.read_parquet(DATA_DIR / "popular_items.parquet")
         
-        print("✓ Loaded final_recommendations.parquet (3.3M rows)")
-        print("✓ Loaded popular_items.parquet (100 items)")
+        print("[OK] Loaded final_recommendations.parquet (3.3M rows)")
+        print("[OK] Loaded popular_items.parquet (100 items)")
+        
+        # Load product names from cache (fast!)
+        product_mapper = get_product_mapper()
+        try:
+            cache_file = BASE_DIR.parent / "product_names_cache.pkl"
+            if cache_file.exists():
+                product_mapper.load_from_cache(str(cache_file))
+                print(f"[OK] Loaded product names from cache")
+            else:
+                print(f"[WARN] Cache file not found, will try parquet files")
+                meta_ui_path = BASE_DIR.parent / "meta_ui"
+                product_mapper.load_from_parquet(str(meta_ui_path))
+        except Exception as e:
+            print(f"[WARN] Failed to load product names: {e}")
         
         # Try to load metadata if available
         try:
             meta_df = pd.read_parquet(BASE_DIR.parent / "RS-20260405T032136Z-1-001" / "RS" / "meta_rs.parquet")
-            print("✓ Loaded meta_rs.parquet")
+            print("[OK] Loaded meta_rs.parquet")
         except:
             meta_df = None
-            print("⚠ meta_rs.parquet not found - metadata will be limited")
+            print("[WARN] meta_rs.parquet not found - using product names from meta_ui")
         
         # Content-based engine will be loaded on-demand
-        print("✓ Content-based engine will be loaded on first request (lazy loading)")
+        print("[OK] Content-based engine will be loaded on first request (lazy loading)")
     
     except Exception as e:
-        print(f"❌ Error loading data: {e}")
+        print(f"[ERROR] Error loading data: {e}")
         raise
 
 
 def get_item_metadata(item_id: str) -> ItemMetadata:
-    """Get metadata for an item"""
+    """Get metadata for an item (title, image, description) from product mapper"""
+    global product_mapper, meta_df
     metadata = ItemMetadata(product_id=item_id)
     
+    # First, try to get from product_mapper (meta_ui parquet files with images)
+    if product_mapper is not None:
+        product_info = product_mapper.get_product_info(item_id)
+        if product_info.get('title'):
+            metadata.title = product_info.get('title')
+            metadata.image_url = product_info.get('image_url')
+            
+            # Try to get description from meta_df if available
+            if meta_df is not None and item_id in meta_df['product_id'].values:
+                item = meta_df[meta_df['product_id'] == item_id].iloc[0]
+                metadata.description = str(item.get('description', '')) if pd.notna(item.get('description')) else None
+                try:
+                    features = item.get('features')
+                    if features and pd.notna(features):
+                        if isinstance(features, str):
+                            metadata.features = eval(features)
+                        else:
+                            metadata.features = features
+                except:
+                    pass
+            return metadata
+    
+    # Fall back to meta_df if available
     if meta_df is not None and item_id in meta_df['product_id'].values:
         item = meta_df[meta_df['product_id'] == item_id].iloc[0]
         metadata.title = str(item.get('title', '')) if pd.notna(item.get('title')) else None
@@ -167,17 +206,31 @@ def get_item_metadata(item_id: str) -> ItemMetadata:
     return metadata
 
 
-def format_recommendations(items: list[tuple[str, float]]) -> list[RecommendationItem]:
-    """Format recommendation tuples into RecommendationItem objects"""
+def format_recommendations(items: list[tuple[str, float]], max_results: int = None) -> list[RecommendationItem]:
+    """Format recommendation tuples into RecommendationItem objects, filtering unavailable products"""
+    unavailable_text = "Sản phẩm hiện không còn bày bán"
     results = []
-    for rank, (item_id, score) in enumerate(items, 1):
+    rank = 1
+    
+    for item_id, score in items:
+        if max_results and len(results) >= max_results:
+            break
+        
+        metadata = get_item_metadata(item_id)
+        
+        # Skip unavailable products
+        if metadata.title == unavailable_text:
+            continue
+        
         rec_item = RecommendationItem(
             rank=rank,
             item_id=item_id,
             score=float(score),
-            metadata=get_item_metadata(item_id)
+            metadata=metadata
         )
         results.append(rec_item)
+        rank += 1
+    
     return results
 
 
@@ -202,58 +255,91 @@ async def health_check():
 
 @app.get("/recommend/popular", response_model=PopularItemsResponse)
 async def get_popular_items(top_k: int = 20):
-    """Get popular items for homepage"""
+    """Get popular items for homepage (excluding products not available)"""
     if popular_items_df is None:
         raise HTTPException(status_code=503, detail="Popular items data not loaded")
     
     top_k = min(top_k, 100)
-    items = popular_items_df.head(top_k)
+    
+    # Placeholder for unavailable products
+    unavailable_text = "Sản phẩm hiện không còn bày bán"
     
     recommendations = []
-    for rank, row in enumerate(items.itertuples(), 1):
+    rank = 1
+    
+    # Need to fetch more items than top_k because we filter out unavailable ones
+    # Fetch up to 3x top_k to ensure we get enough valid products
+    max_fetch = min(len(popular_items_df), top_k * 3)
+    items = popular_items_df.head(max_fetch)
+    
+    for row in items.itertuples():
+        if len(recommendations) >= top_k:
+            break
+        
         item_id = row.product_id if hasattr(row, 'product_id') else row[0]
         score = row.score if hasattr(row, 'score') else row[1]
+        
+        # Get metadata to check if product is available
+        metadata = get_item_metadata(item_id)
+        
+        # Skip unavailable products
+        if metadata.title == unavailable_text:
+            continue
         
         recommendations.append(RecommendationItem(
             rank=rank,
             item_id=item_id,
             score=float(score),
-            metadata=get_item_metadata(item_id)
+            metadata=metadata
         ))
+        rank += 1
     
     return PopularItemsResponse(items=recommendations, total=len(recommendations))
 
 
 @app.get("/recommend/user/{user_id}", response_model=UserRecommendationResponse)
 async def get_user_recommendations(user_id: str, top_k: int = 10):
-    """Get recommendations for a specific user (Hybrid system)"""
+    """Get recommendations for a specific user (Hybrid system, excluding unavailable products)"""
     if final_recommendations_df is None:
         raise HTTPException(status_code=503, detail="Recommendations data not loaded")
     
     top_k = min(top_k, 100)
+    unavailable_text = "Sản phẩm hiện không còn bày bán"
     
     # Filter recommendations for this user and get top-k
     user_recs = final_recommendations_df[
         final_recommendations_df['user_id'] == user_id
-    ].nlargest(top_k, 'final_score')
+    ].nlargest(top_k * 3, 'final_score')  # Fetch more to filter out unavailable
     
     if user_recs.empty:
         # If user not found in hybrid recommendations, suggest popular items
         return UserRecommendationResponse(
             user_id=user_id,
             items=format_recommendations([(row.product_id, row.score) 
-                                         for row in popular_items_df.head(top_k).itertuples()]),
+                                         for row in popular_items_df.head(top_k * 3).itertuples()], top_k),
             total=0
         )
     
     recommendations = []
-    for rank, row in enumerate(user_recs.itertuples(), 1):
+    rank = 1
+    
+    for row in user_recs.itertuples():
+        if len(recommendations) >= top_k:
+            break
+        
+        metadata = get_item_metadata(row.product_id)
+        
+        # Skip unavailable products
+        if metadata.title == unavailable_text:
+            continue
+        
         recommendations.append(RecommendationItem(
             rank=rank,
             item_id=row.product_id,
             score=float(row.final_score),
-            metadata=get_item_metadata(row.product_id)
+            metadata=metadata
         ))
+        rank += 1
     
     return UserRecommendationResponse(
         user_id=user_id,
@@ -294,12 +380,22 @@ async def get_similar_items(item_id: str, top_k: int = 10):
         
         recommendations = []
         for rec in similar_items:
+            metadata = get_item_metadata(rec.item_id)
+            
+            # Skip unavailable products
+            if metadata.title == "Sản phẩm hiện không còn bày bán":
+                continue
+            
             recommendations.append(RecommendationItem(
-                rank=rec.rank,
+                rank=len(recommendations) + 1,
                 item_id=rec.item_id,
                 score=rec.score,
-                metadata=get_item_metadata(rec.item_id)
+                metadata=metadata
             ))
+            
+            # Stop when we have enough valid recommendations
+            if len(recommendations) >= top_k:
+                break
         
         return SimilarItemsResponse(
             item_id=item_id,
@@ -331,12 +427,12 @@ async def get_new_user_recommendations(interactions: list[dict], top_k: int = 10
         )
     
     if not interactions:
-        # No interactions, return popular items
-        popular = popular_items_df.head(top_k)
+        # No interactions, return popular items (excluding unavailable ones)
+        popular = popular_items_df.head(top_k * 3)
         return NewUserResponse(
             items=format_recommendations([(row.product_id, row.score) 
-                                         for row in popular.itertuples()]),
-            total=len(popular)
+                                         for row in popular.itertuples()], top_k),
+            total=0  # User had no interactions
         )
     
     top_k = min(top_k, 100)
@@ -353,17 +449,29 @@ async def get_new_user_recommendations(interactions: list[dict], top_k: int = 10
         recommendations = engine.recommend(
             user_context,
             algorithm="weighted_avg",
-            top_k=top_k
+            top_k=top_k * 3  # Fetch more to filter unavailable ones
         )
         
         rec_items = []
+        rank = 1
+        
         for rec in recommendations:
+            if len(rec_items) >= top_k:
+                break
+            
+            metadata = get_item_metadata(rec.item_id)
+            
+            # Skip unavailable products
+            if metadata.title == "Sản phẩm hiện không còn bày bán":
+                continue
+            
             rec_items.append(RecommendationItem(
-                rank=rec.rank,
+                rank=rank,
                 item_id=rec.item_id,
                 score=rec.score,
-                metadata=get_item_metadata(rec.item_id)
+                metadata=metadata
             ))
+            rank += 1
         
         return NewUserResponse(items=rec_items, total=len(rec_items))
     except Exception as e:

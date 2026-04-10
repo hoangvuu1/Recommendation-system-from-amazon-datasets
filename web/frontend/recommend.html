@@ -146,9 +146,16 @@
             
             const title = item.metadata?.title || `Product ${item.item_id}`;
             const desc = item.metadata?.description ? item.metadata.description.substring(0, 100) + '...' : '';
+            const imageUrl = item.metadata?.image_url || '';
             
-            div.innerHTML = `
-                <div class="card h-100 shadow-sm product-card">
+            let cardHtml = `<div class="card h-100 shadow-sm product-card">`;
+            
+            // Add image if available
+            if (imageUrl) {
+                cardHtml += `<img src="${imageUrl}" class="card-img-top" alt="${title}" style="height: 250px; object-fit: cover;">`;
+            }
+            
+            cardHtml += `
                     <div class="card-body">
                         <div class="rank-badge">🎯 #${item.rank}</div>
                         <h5 class="card-title">${title}</h5>
@@ -161,9 +168,9 @@
                             Sản phẩm tương tự
                         </a>
                     </div>
-                </div>
-            `;
+                </div>`;
             
+            div.innerHTML = cardHtml;
             return div;
         }
 

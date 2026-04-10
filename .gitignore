@@ -195,6 +195,13 @@ cython_debug/
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
+# Large cache and data files
+*.pkl
+*.jsonl
+product_names_cache.pkl
+web/product_names_cache.pkl
+web/item_title_merged.jsonl
+
 # Ruff stuff:
 .ruff_cache/
 
