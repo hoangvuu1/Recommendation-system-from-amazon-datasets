@@ -33,7 +33,7 @@ Raw Data (Amazon Office Products)
                    ▼
         ┌─────────────────────────────┐
         │  Part 5: Web Demo           │
-        │  (FastAPI + HTML/JS) ✅     │
+        │  (FastAPI + HTML/JS)      │
         └─────────────────────────────┘
 ```
 
